@@ -105,6 +105,7 @@ let classes = {
     }
 };
 
+
 /**
  * ColorLibrary - 颜色库
  *
@@ -192,6 +193,13 @@ const ColorLibrary = {
 /*
    基础功能
 * */
+function log(text, TAG="")
+{
+    // send("[*]" + text);
+    console.log("[*] " + text);
+    Java.perform(() => and.android_util_Log.i(TAG, `${text}`))
+}
+
 
 function getStackTrace() {
     const currentThread = Java.use('java.lang.Thread').currentThread();
@@ -202,15 +210,24 @@ function getStackTrace() {
         stackTraceString += '\t' + stackTrace[i].toString() + '\n';
     }
 
-    console.log(ColorLibrary.coloredText('Backtrace: \n' + stackTraceString, 'brightWight'));
+    log(ColorLibrary.coloredText('Backtrace: \n' + stackTraceString, 'brightWight'));
     return stackTraceString;
 }
-function log(text, TAG="")
-{
-    send("[*]" + text);
-    console.log("[*] " + text);
-    Java.perform(() => and.android_util_Log.i(TAG, `${text}`))
+
+
+function hashcode(string) {
+    //set variable hash as 0
+    var hash = 0;
+    // if the length of the string is 0, return 0
+    if (string.length === 0) return hash;
+    for (let i = 0; i < string.length; i++) {
+        let ch = string.charCodeAt(i);
+        hash = ((hash << 5) - hash) + ch;
+        hash = hash & hash;
+    }
+    return hash;
 }
+
 
 //////////////////////////////////////////////////////////////////////////////
 // 2.0 hook 方式
@@ -234,11 +251,17 @@ function sharpHookCommon(className, methodName, overload, beforeCallback, afterC
     log(ColorLibrary.coloredText('Hooking ', 'brightWight') + textBody
         + '(' + ColorLibrary.coloredText(argumentTypesList, 'brightRed') + ')');
 
+    // 记录重入属性
+    let reenter = false;
+
+    // 计算hash值
+    let hash = hashcode(textBody)
+
     // 替换目标方法的实现
     overload.implementation = function() {
-
         // 获取回调参数
         let params = {
+            reenter : reenter,
             className : className,
             methodName : methodName,
 
@@ -248,6 +271,8 @@ function sharpHookCommon(className, methodName, overload, beforeCallback, afterC
             call : true,
             stack : false
         };
+
+
 
         // 获取参数值列表
         const args = [...arguments];
@@ -259,7 +284,9 @@ function sharpHookCommon(className, methodName, overload, beforeCallback, afterC
         log(`${info} | before called`);
 
         // 在调用前执行前回调函数
-        if (typeof beforeCallback === 'function') {
+        if (typeof beforeCallback === 'function' && reenter === false) {
+            // 防止重入
+            reenter = true;
             beforeCallback(params);
         }
 
@@ -270,6 +297,11 @@ function sharpHookCommon(className, methodName, overload, beforeCallback, afterC
         if (params.call === true) {
             // 调用原始方法
             var result = overload.apply(this, arguments);
+
+            // [-] 消除重入标志
+            if (reenter === true) {
+                reenter = false;
+            }
 
             // 在调用后执行后回调函数
             if (typeof afterCallback === 'function') {
@@ -305,12 +337,16 @@ function sharpHookCommon(className, methodName, overload, beforeCallback, afterC
         return result;
     };
 }
+
+
 // 枚举参数，表示hook的类别
 var HookCategory = {
     ALL_MEMBERS: 0,
     SINGLE_FUNCTION: 1,
     CONSTRUCTOR: 2
 };
+
+
 function fastHook(type, name, beforeCallback= null, afterCallback= null) {
     let clazz = null;
     if (type === HookCategory.CONSTRUCTOR) {
@@ -334,9 +370,14 @@ function fastHook(type, name, beforeCallback= null, afterCallback= null) {
             console.log(`can't find className ${name} return ${clazz}`);
         } else {
             clazz.class.getDeclaredMethods().forEach(function (targetMethod) {
-                findClass(name)[targetMethod.getName()].overloads.forEach(overload => {
-                    sharpHookCommon(name, targetMethod.getName(), overload, beforeCallback, afterCallback);
-                });
+                let methodName = targetMethod.getName()
+                if (clazz[methodName] === undefined || clazz[methodName] == null) {
+                    console.log(`can't find methodName ${methodName} return ${clazz[methodName]}`);
+                } else {
+                    clazz[methodName].overloads.forEach(overload => {
+                        sharpHookCommon(name, methodName, overload, beforeCallback, afterCallback);
+                    });
+                }
             });
         }
         return;
@@ -361,21 +402,34 @@ function fastHook(type, name, beforeCallback= null, afterCallback= null) {
             console.log(`can't find className ${className} return ${clazz}`);
             return;
         }
-        
+
+        if (clazz[methodName] === undefined || clazz[methodName] == null) {
+            console.log(`can't find methodName ${methodName} return ${clazz[methodName]}`);
+            return;
+        }
+
         clazz[methodName].overloads.forEach(overload => {
             sharpHookCommon(className, methodName, overload, beforeCallback, afterCallback);
         });
     }
 }
+
+
 function hookClass(name, beforeCallback= null, afterCallback= null) {
     fastHook(HookCategory.ALL_MEMBERS, name, beforeCallback, afterCallback);
 }
+
+
 function hookConstruction(name, beforeCallback= null, afterCallback= null) {
     fastHook(HookCategory.CONSTRUCTOR, name, beforeCallback, afterCallback);
 }
+
+
 function hookMethod(name, beforeCallback= null, afterCallback= null) {
     fastHook(HookCategory.SINGLE_FUNCTION, name, beforeCallback, afterCallback);
 }
+
+
 function resolveIntent(intent)
 {
     try {
@@ -416,6 +470,7 @@ function resolveIntent(intent)
     }
 }
 
+
 function resolveBundle(bundle)
 {
     log("=============    resolveBundle start    =============")
@@ -429,56 +484,59 @@ function resolveBundle(bundle)
     }
     log("=============    resolveBundle  end     =============")
 }
+
+
 function baseTrace() {
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.IActivityManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.IActivityTaskManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.IActivityClientController$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.content.pm.IPackageManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.view.IWindowSession$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.net.IConnectivityManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.internal.telephony.ITelephony$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.accounts.IAccountManager$Stub$Proxy");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.content.ContentProvider");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.admin.IDevicePolicyManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.INotificationManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.job.IJobScheduler$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.media.IAudioService$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.internal.telephony.ISub$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.content.ContentProviderProxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.content.ContentProvider$Transport");
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.internal.view.IInputMethodManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.view.accessibility.IAccessibilityManager$Stub$Proxy");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.content.ContentResolver");
-    fastHook(HookCategory.ALL_MEMBERS, "android.os.storage.IStorageManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.providers.media.MediaProvider");
-    // fastHook(HookCategory.ALL_MEMBERS, "com.google.android.apps.photos.localmedia.ui.LocalPhotosActivity");
-    fastHook(HookCategory.ALL_MEMBERS, "android.hardware.display.IDisplayManager$Stub$Proxy");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.app.Instrumentation")
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.server.content.SyncManager");
-    fastHook(HookCategory.ALL_MEMBERS, "android.os.IUserManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.content.IContentService$Stub$Proxy");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.app.ActivityThread");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.app.Activity");
+    hookClass("android.app.IActivityManager$Stub$Proxy");
+    hookClass("android.app.IActivityTaskManager$Stub$Proxy");
+    hookClass("android.app.IActivityClientController$Stub$Proxy");
+    hookClass("android.content.pm.IPackageManager$Stub$Proxy");
+    hookClass("android.view.IWindowSession$Stub$Proxy");
+    hookClass("android.net.IConnectivityManager$Stub$Proxy");
+    hookClass("com.android.internal.telephony.ITelephony$Stub$Proxy");
+    hookClass("android.accounts.IAccountManager$Stub$Proxy");
+    // hookClass("android.content.ContentProvider");
+    hookClass("android.app.admin.IDevicePolicyManager$Stub$Proxy");
+    hookClass("android.app.INotificationManager$Stub$Proxy");
+    hookClass("android.app.job.IJobScheduler$Stub$Proxy");
+    hookClass("android.media.IAudioService$Stub$Proxy");
+    hookClass("com.android.internal.telephony.ISub$Stub$Proxy");
+    hookClass("android.content.ContentProviderProxy");
+    hookClass("android.content.ContentProvider$Transport");
+    hookClass("com.android.internal.view.IInputMethodManager$Stub$Proxy");
+    hookClass("android.view.accessibility.IAccessibilityManager$Stub$Proxy");
+    // hookClass("android.content.ContentResolver");
+    hookClass("android.os.storage.IStorageManager$Stub$Proxy");
+    hookClass("com.android.providers.media.MediaProvider");
+    // hookClass("com.google.android.apps.photos.localmedia.ui.LocalPhotosActivity");
+    hookClass("android.hardware.display.IDisplayManager$Stub$Proxy");
+    // hookClass("android.app.Instrumentation")
+    hookClass("com.android.server.content.SyncManager");
+    hookClass("android.os.IUserManager$Stub$Proxy");
+    hookClass("android.content.IContentService$Stub$Proxy");
+    // hookClass"android.app.ActivityThread");
+    // hookClass"android.app.Activity");
 
 
-    // fastHook(HookCategory.ALL_MEMBERS, "android.net.Uri");
-    // fastHook(HookCategory.CONSTRUCTOR, ("android.net.Uri");
-    // fastHook(HookCategory.ALL_MEMBERS, "java.net.URL");
-    // fastHook(HookCategory.CONSTRUCTOR, ("java.net.URL");
+    // hookClass"android.net.Uri");
+    // hookConstruction("android.net.Uri");
+    // hookClass"java.net.URL");
+    // hookConstruction("java.net.URL");
 
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getBoolean");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getInt");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getLong");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getFloat");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getString");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getStringSet");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putBoolean");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putInt");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putLong");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putFloat");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putString");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putStringSet");
+    // hookMethod("android.app.SharedPreferencesImpl.getBoolean");
+    // hookMethod("android.app.SharedPreferencesImpl.getInt");
+    hookMethod("android.app.SharedPreferencesImpl.getLong");
+    hookMethod("android.app.SharedPreferencesImpl.getFloat");
+    hookMethod("android.app.SharedPreferencesImpl.getString");
+    hookMethod("android.app.SharedPreferencesImpl.getStringSet");
+    hookMethod("android.app.SharedPreferencesImpl$EditorImpl.putBoolean");
+    hookMethod("android.app.SharedPreferencesImpl$EditorImpl.putInt");
+    hookMethod("android.app.SharedPreferencesImpl$EditorImpl.putLong");
+    hookMethod("android.app.SharedPreferencesImpl$EditorImpl.putFloat");
+    hookMethod("android.app.SharedPreferencesImpl$EditorImpl.putString");
+    hookMethod("android.app.SharedPreferencesImpl$EditorImpl.putStringSet");
 }
+
 
 function getCurrentTime() {
     const now = new Date();
@@ -491,6 +549,7 @@ function getCurrentTime() {
 
     return `${month}-${day} ${hours}:${minutes}:${seconds}.${milliseconds}`;
 }
+
 
 function catObject(obj, type, callback=null) {
     try {
@@ -540,6 +599,22 @@ function catObject(obj, type, callback=null) {
     }
 }
 
+
+function catMap(obj) {
+    console.log("=== catMap === for " + obj);
+    if (obj != null) {
+        let map = Java.cast(obj, Java.use("java.util.HashMap"));
+
+        console.log("HashMap size:" + map.size());
+        let iterator = map.entrySet().iterator();
+        while (iterator.hasNext()) {
+            let entry = iterator.next();
+            console.log(entry.toString());
+        }
+    }
+}
+
+
 function enumerateModules(callback) {
     console.log("========== B enumerateModules B ==========")
     Java.perform(() => {
@@ -556,6 +631,7 @@ function enumerateModules(callback) {
     })
     console.log("========== E enumerateModules E ==========")
 }
+
 
 Java.perform(function () {
     console.log("uid: " + and.android_os_Process.myUid());

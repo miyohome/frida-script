@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Dropdown Example</title>
+    <style>
+        .dropdown {
+            width: 200px;
+        }
+    </style>
+</head>
+<body>
+<div class="dropdown">
+    <select id="dropdownMenu">
+        <option value="option1">Option 1</option>
+        <option value="option2">Option 2</option>
+        <option value="option3">Option 3</option>
+    </select>
+</div>
+
+<script>
+    // 获取下拉菜单元素
+    var dropdown = document.getElementById("dropdownMenu");
+
+    // 添加事件监听器，当选项被选择时触发
+    dropdown.addEventListener("change", function() {
+        // 获取用户选择的值
+        var selectedValue = dropdown.value;
+
+        // 将选择的值发送给Android应用（通过WebView的JavaScript接口）
+        // 例如，你可以调用Android的JavaScriptInterface中的方法将选择的值传递给Android应用
+        // 请注意：在Android中使用addJavascriptInterface()方法来设置JavaScript接口
+    });
+</script>
+</body>
+</html>
