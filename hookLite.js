@@ -184,7 +184,8 @@ const ColorLibrary = {
         const resetCode = '\u001b[0m';
         const colorCode = this.FontcolorMap[color] || '';
         const bgColorCode = this.BgcolorMap[backgroundColor] || '';
-        return `${bgColorCode}${colorCode}${text}${resetCode}`;
+        // return `${bgColorCode}${colorCode}${text}${resetCode}`;
+        return `${colorCode}${text}${resetCode}`;
     },
 };
 
@@ -207,7 +208,7 @@ function getStackTrace() {
 }
 function log(text, TAG="")
 {
-    send("[*]" + text);
+    // send("[*]" + text);
     console.log("[*] " + text);
     Java.perform(() => and.android_util_Log.i(TAG, `${text}`))
 }
@@ -316,18 +317,18 @@ function fastHook(type, name, beforeCallback= null, afterCallback= null) {
     if (type === HookCategory.CONSTRUCTOR) {
         clazz = findClass(name);
         if (clazz === undefined || clazz == null) {
-            console.log(`can't find className ${name} return ${clazz}`);
+            log(`can't find className ${name} return ${clazz}`);
         } else {
             try {
                 if (clazz.$init === undefined || clazz.$init == null) {
-                    console.log(`can't find className constructor ${name} return`);
+                    log(`can't find className constructor ${name} return`);
                 } else {
                     clazz.$init.overloads.forEach(function (overload) {
                         sharpHookCommon(name, '$init', overload, beforeCallback, afterCallback);
                     });
                 }
             } catch (e) {
-                console.log(e)
+                log(e)
             }
         }
         return;
@@ -335,14 +336,15 @@ function fastHook(type, name, beforeCallback= null, afterCallback= null) {
     if (type === HookCategory.ALL_MEMBERS) {
         clazz = findClass(name);
         if (clazz == null) {
-            console.log(`can't find className ${name} return ${clazz}`);
+            log(`can't find className ${name} return ${clazz}`);
         } else {
             clazz.class.getDeclaredMethods().forEach(function (targetMethod) {
-                if (clazz[targetMethod.getName()] === undefined || clazz[targetMethod.getName()] == null) {
-                    console.log(`can't find methodName ${targetMethod.getName()} return`);
+                let methodName = targetMethod.getName();
+                if (clazz[methodName] === undefined || clazz[methodName] == null || clazz[methodName].overloads === undefined) {
+                    log(`can't find methodName ${methodName} return`);
                 } else {
-                    clazz[targetMethod.getName()].overloads.forEach(overload => {
-                        sharpHookCommon(name, targetMethod.getName(), overload, beforeCallback, afterCallback);
+                    clazz[methodName].overloads.forEach(overload => {
+                        sharpHookCommon(name, methodName, overload, beforeCallback, afterCallback);
                     });
                 }
             });
@@ -366,12 +368,12 @@ function fastHook(type, name, beforeCallback= null, afterCallback= null) {
         // 获取 java 类
         clazz = findClass(className);
         if (clazz == null) {
-            console.log(`can't find className ${className} return ${clazz}`);
+            log(`can't find className ${className} return ${clazz}`);
             return;
         }
 
-        if (clazz[methodName] === undefined || clazz[methodName] == null) {
-            console.log(`can't find methodName ${methodName} return`);
+        if (clazz[methodName] === undefined || clazz[methodName] == null || clazz[methodName].overloads === undefined) {
+            log(`can't find methodName ${methodName} return`);
         } else {
             clazz[methodName].overloads.forEach(overload => {
                 sharpHookCommon(className, methodName, overload, beforeCallback, afterCallback);
@@ -570,257 +572,11 @@ function enumerateModules(callback) {
 }
 
 Java.perform(function () {
-    console.log("uid: " + and.android_os_Process.myUid());
-    console.log("pid: " + and.android_os_Process.myPid());
+    log("uid: " + and.android_os_Process.myUid());
+    log("pid: " + and.android_os_Process.myPid());
 
     // do something
+    hookMethod("android.os.Process.killProcess", (params) => {
+        params.stack=true;
+    });
 });
-
-function reIO() {
-
-    // hookClass"com.mihoyoos.sdk.platform.SdkActivity")
-    // TracePid pass
-    // var ByPassTracerPid = function () {
-    //     var fgetsPtr = Module.findExportByName("libc.so", "fgets");
-    //     var fgets = new NativeFunction(fgetsPtr, 'pointer', ['pointer', 'int', 'pointer']);
-    //     Interceptor.replace(fgetsPtr, new NativeCallback(function (buffer, size, fp) {
-    //         var retval = fgets(buffer, size, fp);
-    //         var bufstr = Memory.readUtf8String(buffer);
-    //         if (bufstr.indexOf("TracerPid:") > -1) {
-    //             Memory.writeUtf8String(buffer, "TracerPid:\t0");
-    //             console.log("tracerpid replaced: " + Memory.readUtf8String(buffer));
-    //             console.log('pthread_create called from:\n'
-    //                 + Thread.backtrace(this.context, Backtracer.ACCURATE)
-    //                     .map(DebugSymbol.fromAddress)
-    //                     .join('\n')
-    //                 + '\n');
-    //         }
-    //         return retval;
-    //     }, 'pointer', ['pointer', 'int', 'pointer']));
-    // };
-    // ByPassTracerPid();
-
-    // function hook_libc_func(exportName) {
-    //     var pthread_creat_addr = Module.findExportByName("libc.so", exportName)
-    //     Interceptor.attach(pthread_creat_addr,{
-    //         onEnter(args){
-    //             console.log("call pthread_create...")
-    //             let func_addr = args[2]
-    //             console.log("The thread function address is " + func_addr)
-    //             console.log('pthread_create called from:\n'
-    //                 + Thread.backtrace(this.context, Backtracer.ACCURATE)
-    //                     .map(DebugSymbol.fromAddress)
-    //                     .join('\n')
-    //                 + '\n');
-    //         }
-    //     })
-    // }
-    // hook_libc_func("pthread_create");
-
-    Interceptor.attach(Module.findExportByName(null, "android_dlopen_ext"), {
-        onEnter: function (args) {
-            const addr = args[0];
-            if (addr !== undefined && addr !== null) {
-
-                var path = ptr(addr).readCString();
-                console.log("dlopen load " + path);
-            }
-        }
-    });
-
-    // Interceptor.attach(Module.findExportByName(null, "__system_property_get"), {
-    //     onEnter: args => {
-    //         let name = args[0];
-    //
-    //         let ignore = [
-    //             "vendor.debug.egl.swapinterval",
-    //             "cache_key.display_info",
-    //             "cache_key.package_info",
-    //             "debug.force_rtl",
-    //             "cache_key.telephony.get_default_sub_id",
-    //             "gsm.operator.alpha",
-    //         ]
-    //
-    //         let result = ignore.find(item => item == name);
-    //         if (result != undefined && result != null) {
-    //             console.log("__system_property_get:" + ptr(name).readCString());
-    //         }
-    //     }, onLeave: retval => {
-    //
-    //     }
-    // })
-    return;
-    let path;
-    let relink;
-    Interceptor.attach(Module.findExportByName(null, "readlink"), {
-        onEnter: function (args) {
-            path = args[0];
-            relink = args[1];
-        },
-        onLeave: retval => {
-            let pathname = ptr(path).readCString();
-            let relinkPath = ptr(relink).readCString();
-            // relinkPath = relinkPath.replaceAll(
-            //     "/storage/emulated/0/Android/data/com.gbox.android/_root/sdcard",
-            //     "/storage/emulated/0");
-            //
-            // relinkPath = relinkPath.replaceAll(
-            //     "/data/user/0/com.gbox.android/_root/data/internal_app",
-            //     "/data/app");
-            //
-            // relinkPath = relinkPath.replaceAll(
-            //     "/data/user/0/com.gbox.android/_root/data/user/0",
-            //     "/data/user/0");
-            //
-            // relinkPath = relinkPath.replaceAll(
-            //     "/data/internal_app",
-            //     "/data/app");
-            //
-            console.log(`relink ${pathname} to ${relinkPath}`);
-            ptr(relink).writeUtf8String(relinkPath)
-        }
-    });
-    // Interceptor.attach(Module.findExportByName(null, "open"), {
-    //     onEnter: function (args) {
-    //         var pathptr = args[0];
-    //         if (pathptr !== undefined && pathptr != null) {
-    //             let path = ptr(pathptr).readCString();
-    //             // console.log("open file:" + path);
-    //             let ignore = [
-    //                 "/data/user/0/com.gbox.android/_root/data",
-    //                 "/storage/emulated/0/Android/data",
-    //                 "/data/internal_app",
-    //                 "/data/data/com.garena.game.codm",
-    //                 "/storage/emulated/0/com.garena.game.codm",
-    //                 "/dev/urandom",
-    //                 "/apex/",
-    //                 "/data/misc",
-    //                 "/system",
-    //                 "[",
-    //                 "/dev",
-    //                 "/data/resource-cache",
-    //                 "/product",
-    //                 "/vendor",
-    //                 "/dmabuf:",
-    //                 "/memfd",
-    //             ];
-    //
-    //             let find = false;
-    //             for (let i = 0; i < ignore.length; i++) {
-    //                 if (path.includes(ignore[i])) {
-    //                     find = true;
-    //                 }
-    //             }
-    //
-    //
-    //             if (!find) {
-    //                 console.log(" open:" + path);
-    //             }
-    //
-    //             Java.perform(() => {
-    //
-    //                 // if (path.includes('/maps')) {
-    //                 //     log(printSoBacktrace(this.context));
-    //                 // }
-    //             })
-    //             // console.log(' called from:\n' + printSoBacktrace());
-    //         }
-    //     }
-    //     , onLeave: retval => {
-    //         // console.log("count:" + count + " open fd:" + retval);
-    //     }
-    // });
-    return;
-    Interceptor.attach(Module.findExportByName(null, "openat"), {
-        onEnter: function (args) {
-            let fd = args[0];
-            let path = args[1];
-            let flags = args[2];
-
-            if (path != null && path != undefined) {
-                console.log("openat path: " + ptr(path).readCString());
-            }
-        }
-
-    });
-    Interceptor.attach(Module.findExportByName(null, "read"), {
-        onEnter: function (args) {
-            Java.perform(() => {
-                let fd = args[0];
-                let buf = args[1];
-                let bytes = args[2];
-
-                // 读取字符串
-                let stringValue = ptr(buf).readCString();
-                stringValue = stringValue.replaceAll("/data/user/0/com.gbox.android/_root/data/internal_app", "/data/app")
-                stringValue = stringValue.replaceAll("/data/user/0/com.gbox.android/_root/data/user/0", "/data/user/0")
-                stringValue = stringValue.replaceAll("/data/media/0/Android/data/com.gbox.android/_root", "")
-                ptr(buf).writeUtf8String(stringValue)
-
-                // console.log(`fd(${fd})=${stringValue}`);
-
-                // var regex = /^[\x20-\x7E]+$/;
-                // if (regex.test(stringValue)) {
-                //     console.log(`fd(${fd})=${stringValue}`);
-                //     log(printSoBacktrace(this.context));
-                // //     console.log(`read(${bytes})=${hexdump(ptr(buf))}`);
-                // }
-            })
-        }
-    });
-
-    Interceptor.attach(Module.findExportByName(null, "kill"), {
-        onEnter: function(args) {
-            console.log("kill:\n");
-            console.log(Thread.backtrace(this.context, Backtracer.FUZZY)
-                .map(DebugSymbol.fromAddress).join("\n"))
-        }
-    });
-
-    // let libunity_addr = Process.getModuleByName("libunity.so");
-    // if (libunity_addr) {
-    //
-    //     log("libunity_addr: " + libunity_addr.base);
-    //     Interceptor.attach(ptr(libunity_addr.base).add(0x6D41F8), {
-    //         onEnter: args => {
-    //             console.log(hexdump(args[0]));
-    //             console.log("libunity_addr enter:" + `${args[0]} ${args[1]} ${args[2]} ${args[3]}`);
-    //         },
-    //         onLeave: retval => {
-    //             console.log("libunity_addr leave:" + retval);
-    //             retval.replace(0);
-    //         }
-    //
-    //     });
-    //     // Interceptor.replace(ptr(libunity_addr.base).add(0x6D41F8),
-    //     //     new NativeCallback((a0, a1, a2, a3, a4, a5, a6, a7) => {
-    //     //         console.log("refuse fault.");
-    //     //         return 0;
-    //     // }, 'int', ['int','int','int','int','int','int','int','int']));
-    //
-    //     // Interceptor.attach(ptr(libunity_addr.base).add(0x70EB10), {
-    //     //     onEnter: args => {
-    //     //         var output = "";
-    //     //
-    //     //         // 遍历通用寄存器x0到x30
-    //     //         for (var i = 0; i <= 30; i++) {
-    //     //             var regValue = args[i].toString(16).padStart(16, '0'); // 转换为16进制，并补0到16位
-    //     //             output += 'x' + i + '   ' + regValue + '  ';
-    //     //             if (i % 4 === 3) {
-    //     //                 output += '\n'; // 每4个寄存器换行
-    //     //             }
-    //     //         }
-    //     //         console.log(output);
-    //     //     }
-    //     // });
-    // }
-
-    // Interceptor.attach(Module.findExportByName(null, "pthread_setname_np"), {
-    //     onEnter: args => {
-    //         console.log("pthread_setname_np:" + `${ptr(args[1]).readCString()}`);
-    //     },
-    //     onLeave: retval => {
-    //
-    //     }
-    // });
-}
