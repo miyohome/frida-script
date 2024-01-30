@@ -252,18 +252,18 @@ function sharpHookCommon(className, methodName, overload, beforeCallback, afterC
 
         // 获取参数值列表
         const args = [...arguments];
-        const argumentValueList = args.map(arg => arg == null ? "null" : arg.toString()).join(', ');
+        let argumentValueList = args.map(arg => arg == null ? "null" : arg.toString()).join(', ');
 
         // 准备函数签名、参数列表
         let info = `${getCurrentTime()} ${uid} ${pid} ${and.java_lang_Thread.currentThread().getId()} ${textBody}(${ColorLibrary.coloredText(argumentValueList, 'brightRed')})`;
-        // + '(' + ColorLibrary.coloredText(argumentValueList, 'brightRed') + ') = ';
         log(`${info} | before called`);
 
-        // 在调用前执行前回调函数
+        // TODO: 在调用前执行前回调函数
         if (typeof beforeCallback === 'function') {
             beforeCallback(params);
         }
 
+        // TODO: 输出日志后根据诉求尝试打印堆栈
         if (params.stack === true) {
             getStackTrace();
         }
@@ -279,6 +279,8 @@ function sharpHookCommon(className, methodName, overload, beforeCallback, afterC
                 result = params.retval;
             }
 
+            argumentValueList = args.map(arg => arg == null ? "null" : arg.toString()).join(', ');
+            info = `${getCurrentTime()} ${uid} ${pid} ${and.java_lang_Thread.currentThread().getId()} ${textBody}(${ColorLibrary.coloredText(argumentValueList, 'brightRed')})`;
             // 打印函数签名、参数列表、返回值
             info += ' = ' + ColorLibrary.coloredText(result, 'brightBlue')
         }
@@ -312,19 +314,25 @@ var HookCategory = {
     SINGLE_FUNCTION: 1,
     CONSTRUCTOR: 2
 };
-function fastHook(type, name, beforeCallback= null, afterCallback= null) {
+
+// 增加过滤条件, 过滤器返回 true 则说明需要过滤掉
+function fastHookInFilter(type, name, filter, beforeCallback= null, afterCallback= null) {
     let clazz = null;
     if (type === HookCategory.CONSTRUCTOR) {
         clazz = findClass(name);
         if (clazz === undefined || clazz == null) {
-            log(`can't find className ${name} return ${clazz}`);
+            log(`cant find className ${name} return ${clazz}`);
         } else {
             try {
                 if (clazz.$init === undefined || clazz.$init == null) {
-                    log(`can't find className constructor ${name} return`);
+                    log(`cant find className constructor ${name} return`);
                 } else {
                     clazz.$init.overloads.forEach(function (overload) {
-                        sharpHookCommon(name, '$init', overload, beforeCallback, afterCallback);
+                        if (filter != null && filter('$init', overload) == true) {
+                            return;
+                        } else {
+                            sharpHookCommon(name, '$init', overload, beforeCallback, afterCallback);
+                        }
                     });
                 }
             } catch (e) {
@@ -336,15 +344,19 @@ function fastHook(type, name, beforeCallback= null, afterCallback= null) {
     if (type === HookCategory.ALL_MEMBERS) {
         clazz = findClass(name);
         if (clazz == null) {
-            log(`can't find className ${name} return ${clazz}`);
+            log(`cant find className ${name} return ${clazz}`);
         } else {
             clazz.class.getDeclaredMethods().forEach(function (targetMethod) {
                 let methodName = targetMethod.getName();
                 if (clazz[methodName] === undefined || clazz[methodName] == null || clazz[methodName].overloads === undefined) {
-                    log(`can't find methodName ${methodName} return`);
+                    log(`cant find methodName ${methodName} return`);
                 } else {
                     clazz[methodName].overloads.forEach(overload => {
-                        sharpHookCommon(name, methodName, overload, beforeCallback, afterCallback);
+                        if (filter != null && filter(methodName, overload) == true) {
+                            return;
+                        } else {
+                            sharpHookCommon(name, methodName, overload, beforeCallback, afterCallback);
+                        }
                     });
                 }
             });
@@ -364,22 +376,36 @@ function fastHook(type, name, beforeCallback= null, afterCallback= null) {
         const className = findClassByString(name);
         // 获取函数名称
         const methodName = findMethodByString(name);
-        
+
         // 获取 java 类
         clazz = findClass(className);
         if (clazz == null) {
-            log(`can't find className ${className} return ${clazz}`);
+            log(`cant find className ${className} return ${clazz}`);
             return;
         }
 
         if (clazz[methodName] === undefined || clazz[methodName] == null || clazz[methodName].overloads === undefined) {
-            log(`can't find methodName ${methodName} return`);
+            log(`cant hook method. because not find methodName {${className}.${methodName}}}`);
+            clazz.getDeclaredMethods().forEach(method => {
+                log(className + " function " + method.getName());
+            });
         } else {
             clazz[methodName].overloads.forEach(overload => {
-                sharpHookCommon(className, methodName, overload, beforeCallback, afterCallback);
+                if (filter != null && filter(methodName, overload) == true) {
+                    return;
+                } else {
+                    sharpHookCommon(className, methodName, overload, beforeCallback, afterCallback);
+                }
             });
         }
     }
+}
+function hookClassInFilter(name, filter, beforeCallback= null, afterCallback= null) {
+    fastHookInFilter(HookCategory.ALL_MEMBERS, name, filter, beforeCallback, afterCallback);
+}
+
+function fastHook(type, name, beforeCallback= null, afterCallback= null) {
+    fastHookInFilter(type, name, null, beforeCallback, afterCallback);
 }
 function hookClass(name, beforeCallback= null, afterCallback= null) {
     fastHook(HookCategory.ALL_MEMBERS, name, beforeCallback, afterCallback);
@@ -444,54 +470,55 @@ function resolveBundle(bundle)
     log("=============    resolveBundle  end     =============")
 }
 function baseTrace() {
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.IActivityManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.IActivityTaskManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.IActivityClientController$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.content.pm.IPackageManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.view.IWindowSession$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.net.IConnectivityManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.internal.telephony.ITelephony$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.accounts.IAccountManager$Stub$Proxy");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.content.ContentProvider");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.admin.IDevicePolicyManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.INotificationManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.app.job.IJobScheduler$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.media.IAudioService$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.internal.telephony.ISub$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.content.ContentProviderProxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.content.ContentProvider$Transport");
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.internal.view.IInputMethodManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.view.accessibility.IAccessibilityManager$Stub$Proxy");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.content.ContentResolver");
-    fastHook(HookCategory.ALL_MEMBERS, "android.os.storage.IStorageManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.providers.media.MediaProvider");
-    // fastHook(HookCategory.ALL_MEMBERS, "com.google.android.apps.photos.localmedia.ui.LocalPhotosActivity");
-    fastHook(HookCategory.ALL_MEMBERS, "android.hardware.display.IDisplayManager$Stub$Proxy");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.app.Instrumentation")
-    fastHook(HookCategory.ALL_MEMBERS, "com.android.server.content.SyncManager");
-    fastHook(HookCategory.ALL_MEMBERS, "android.os.IUserManager$Stub$Proxy");
-    fastHook(HookCategory.ALL_MEMBERS, "android.content.IContentService$Stub$Proxy");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.app.ActivityThread");
-    // fastHook(HookCategory.ALL_MEMBERS, "android.app.Activity");
+    hookClass("android.app.IActivityManager$Stub$Proxy");
+    hookClass("android.app.IActivityTaskManager$Stub$Proxy");
+    hookClass("android.app.IActivityClientController$Stub$Proxy");
+    hookClass("android.content.pm.IPackageManager$Stub$Proxy");
+    hookClass("android.view.IWindowSession$Stub$Proxy");
+    hookClass("android.net.IConnectivityManager$Stub$Proxy");
+    hookClass("com.android.internal.telephony.ITelephony$Stub$Proxy");
+    hookClass("android.accounts.IAccountManager$Stub$Proxy");
+    // hookClass("android.content.ContentProvider");
+    hookClass("android.content.ContentProviderProxy");
+    hookClass("android.content.ContentProvider$Transport");
+
+    hookClass("android.app.admin.IDevicePolicyManager$Stub$Proxy");
+    hookClass("android.app.INotificationManager$Stub$Proxy");
+    hookClass("android.app.job.IJobScheduler$Stub$Proxy");
+    hookClass("android.media.IAudioService$Stub$Proxy");
+    hookClass("com.android.internal.telephony.ISub$Stub$Proxy");
+    hookClass("com.android.internal.view.IInputMethodManager$Stub$Proxy");
+    hookClass("android.view.accessibility.IAccessibilityManager$Stub$Proxy");
+    // hookClass("android.content.ContentResolver");
+    hookClass("android.os.storage.IStorageManager$Stub$Proxy");
+    hookClass("com.android.providers.media.MediaProvider");
+    // hookClass("com.google.android.apps.photos.localmedia.ui.LocalPhotosActivity");
+    hookClass("android.hardware.display.IDisplayManager$Stub$Proxy");
+    // hookClass("android.app.Instrumentation")
+    hookClass("com.android.server.content.SyncManager");
+    hookClass("android.os.IUserManager$Stub$Proxy");
+    hookClass("android.content.IContentService$Stub$Proxy");
+    // hookClass("android.app.ActivityThread");
+    // hookClass("android.app.Activity");
 
 
-    // fastHook(HookCategory.ALL_MEMBERS, "android.net.Uri");
-    // fastHook(HookCategory.CONSTRUCTOR, ("android.net.Uri");
-    // fastHook(HookCategory.ALL_MEMBERS, "java.net.URL");
-    // fastHook(HookCategory.CONSTRUCTOR, ("java.net.URL");
+    // hookClass("android.net.Uri");
+    // hookConstruction("android.net.Uri");
+    // hookClass("java.net.URL");
+    // hookConstruction("java.net.URL");
 
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getBoolean");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getInt");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getLong");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getFloat");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getString");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl.getStringSet");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putBoolean");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putInt");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putLong");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putFloat");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putString");
-    // fastHook(HookCategory.SINGLE_FUNCTION, "android.app.SharedPreferencesImpl$EditorImpl.putStringSet");
+    // hookMethod"android.app.SharedPreferencesImpl.getBoolean");
+    // hookMethod"android.app.SharedPreferencesImpl.getInt");
+    // hookMethod"android.app.SharedPreferencesImpl.getLong");
+    // hookMethod"android.app.SharedPreferencesImpl.getFloat");
+    // hookMethod"android.app.SharedPreferencesImpl.getString");
+    // hookMethod"android.app.SharedPreferencesImpl.getStringSet");
+    // hookMethod"android.app.SharedPreferencesImpl$EditorImpl.putBoolean");
+    // hookMethod"android.app.SharedPreferencesImpl$EditorImpl.putInt");
+    // hookMethod"android.app.SharedPreferencesImpl$EditorImpl.putLong");
+    // hookMethod"android.app.SharedPreferencesImpl$EditorImpl.putFloat");
+    // hookMethod"android.app.SharedPreferencesImpl$EditorImpl.putString");
+    // hookMethod"android.app.SharedPreferencesImpl$EditorImpl.putStringSet");
 }
 
 function getCurrentTime() {
@@ -563,7 +590,8 @@ function enumerateModules(callback) {
                 base : module.base,
                 size : module.size,
                 path : module.path,
-                imports : module.enumerateImports()
+                imports : module.enumerateImports(),
+                exports : module.enumerateExports(),
             }
             callback(params);
         })
@@ -571,12 +599,174 @@ function enumerateModules(callback) {
     console.log("========== E enumerateModules E ==========")
 }
 
+/**
+ * Note: https://codeshare.frida.re/@oleavr/read-std-string/
+ */
+function readStdString (str) {
+    const isTiny = (str.readU8() & 1) === 0;
+    if (isTiny) {
+      return str.add(1).readUtf8String();
+    }
+  
+    return str.add(2 * Process.pointerSize).readPointer().readUtf8String();
+}
+
+function hookRegisterNativeFunction() {
+
+    const libart = Module.load("libart.so");
+    libart.enumerateSymbols().forEach(symbol => {
+        let methodName = "RegisterNativeMethod";
+        if (symbol.name.search(methodName) > 0) {
+            log("hookMethod:" + methodName + " symbolname: " + symbol.name);
+            Interceptor.attach(symbol.address, {
+                onEnter:function(_args) {
+                },
+                onLeave:function(retval) {
+                    // log(symbol.name + " retval:" + retval);
+                }});
+        }
+
+
+        methodName = "LoadNativeLibrary";
+        if (symbol.name.search(methodName) > 0) {
+            log("hookMethod:" + methodName + " symbolname: " + symbol.name);
+            Interceptor.attach(symbol.address, {
+                onEnter:function(_args) {
+                    try {
+                        this.libname = readStdString(_args[2]);
+                        log("LoadNativeLibrary" + " call:" + this.libname);
+                    } catch (error) {
+                        console.log("error:" + error);
+                    }
+                },
+                onLeave:function(retval) {
+                    try {
+                        log("LoadNativeLibrary" + this.libname + " retval:" + retval);
+                    } catch (error) {
+                        console.log("error:" + error);
+                    }
+                }});
+        }
+
+    });
+}
+
+function AntiCheck() {
+    var access_addr = Process.findModuleByName("libc.so").findExportByName("access");
+    if (access_addr != null) {
+        Interceptor.attach(access_addr, {
+            onEnter: function(args){
+                console.log("access args =>", args[0].readCString(), args[1], args[2], args[3]);
+            },
+            onLeave: function(retval){
+                console.log("retval:" + retval);
+            }
+           })
+    }
+
+
+    var faccessat_addr = Module.findExportByName("libc.so", "faccessat");
+    if (faccessat_addr != null) {
+        Interceptor.attach(faccessat_addr, {
+            onEnter: function(args){
+                console.log("faccessat args =>", args[0], args[1].readCString(), args[2], args[3]);
+            },
+            onLeave: function(retval){
+                console.log("retval:" + retval);
+            }
+        });
+    }
+
+    var open_addr = Process.findModuleByName("libc.so").findExportByName("open");
+    if (open_addr != null) {
+        Interceptor.attach(open_addr, {
+            onEnter: function(args){
+                console.log("open args =>", args[0].readCString(), args[1], args[2]);
+            },
+            onLeave: function(retval){
+                console.log("retval:" + retval);
+            }
+           })
+    }
+
+
+    var openat_addr = Module.findExportByName("libc.so", "openat");
+    if (openat_addr != null) {
+        Interceptor.attach(openat_addr, {
+            onEnter: function(args){
+                console.log("openat args =>", args[0], args[1].readCString(), args[2]);
+            },
+            onLeave: function(retval){
+                console.log("retval:" + retval);
+            }
+        });
+    }
+}
+
+function hookNative(libname, funcname, bcall, ecall) {
+    var funcaddr = libaddr.findExportByName(Module.findExportByName(libname, funcname));
+    if (funcaddr != null) {
+        Interceptor.attach(funcaddr, {
+            onEnter: function(args){
+                this.args = args;
+                if(bcall) bcall(args);
+            },
+            onLeave: function(retval){
+                if(ecall) ecall(retval, this);
+            }
+           })
+    }
+
+}
+
+function getStaticField(className, fieldName) {
+    let result = null;
+    findClass(className).class.getDeclaredFields().forEach(field => {
+        if (result == null && field.getName() == fieldName) {
+            field.setAccessible(true);
+            result = field.get(null);
+        }
+    })
+    return result;
+}
+
 Java.perform(function () {
     log("uid: " + and.android_os_Process.myUid());
     log("pid: " + and.android_os_Process.myPid());
 
-    // do something
-    hookMethod("android.os.Process.killProcess", (params) => {
-        params.stack=true;
-    });
+    // no filter
+    hookClass("android.content.Intent");
+
+    // filter
+//    hookClassInFilter("android.content.Intent", function(methodName, overload) {
+//        // 获取返回值类型
+//        const returnType = overload.returnType.className;
+//
+//        // 1. 过滤函数名称
+//        if ("createChooser" == methodName) {
+//            // 返回 true 表示过滤掉
+//            return true;
+//        }
+//
+//        // 2. 过滤返回值
+//        if("android.content.Intent" == returnType) {
+//            return true;
+//        }
+//
+//        // 3. 过滤参数两个，(且/或) 每一个参数类型是指定值
+//        if (overload.argumentTypes.length == 2 &&
+//            overload.argumentTypes[0].className == "android.content.Intent" &&
+//            overload.argumentTypes[1].className == "java.lang.CharSequence") {
+//            return true;
+//        }
+//        // 返回 false 表示不过滤
+//        return false;
+//    })
+
+
+
+
+    // do your something
+    return;
+
 });
